@@ -6,7 +6,18 @@ from security_system import SecurityMotionSensor, SecurityLock, SecurityDevice, 
 
 
 class RemoteControlUI:
+    """
+    A Toplevel window acting as a central remote for specific controllable devices
+    (Lights and Thermostats). Uses the Command Pattern to execute actions.
+    """
+
     def __init__(self, parent, hub):
+        """
+        Initialize the remote control window.
+
+        :param parent: The parent Tkinter widget.
+        :param hub: The central HomeHub instance containing rooms and devices.
+        """
         self.window = tk.Toplevel(parent)
         self.window.title("Remote Control (Command Pattern)")
         self.window.geometry("350x450")
@@ -16,6 +27,10 @@ class RemoteControlUI:
         self.refresh()
 
     def refresh(self):
+        """
+        Clears and rebuilds the UI to reflect the current state of devices.
+        Iterates through all rooms and generates controls for LightFixtures and SmartThermostats.
+        """
         for widget in self.window.winfo_children():
             if isinstance(widget, tk.Frame): widget.destroy()
 
@@ -28,14 +43,11 @@ class RemoteControlUI:
                 frame = tk.Frame(group, pady=5)
                 frame.pack(fill="x")
 
-                # Light Fixture Control
                 if isinstance(dev, LightFixture):
                     tk.Button(frame, text=f"Toggle {dev.name}",
                               command=lambda d=dev: self.execute_cmd(TogglePowerCommand(d))).pack(side=tk.LEFT)
 
-                # Thermostat Control (Now with Power Toggle)
                 elif isinstance(dev, SmartThermostat):
-                    # Power Button
                     pwr_color = "#90ee90" if dev.status == "ON" else "#ff9999"
                     tk.Button(frame, text="Power", bg=pwr_color, width=6,
                               command=lambda d=dev: self.execute_cmd(TogglePowerCommand(d))).pack(side=tk.LEFT, padx=2)
@@ -52,13 +64,30 @@ class RemoteControlUI:
                         side=tk.LEFT, padx=2)
 
     def execute_cmd(self, cmd):
+        """
+        Executes a command object and refreshes the UI.
+
+        :param cmd: A command object implementing the execute() method.
+        """
         res = cmd.execute()
         print(f"Command Result: {res}")
         self.refresh()
 
 
 class RoomInspectorUI:
+    """
+    A Toplevel window for managing a specific room. Allows adding/removing devices
+    and simulating motion events.
+    """
+
     def __init__(self, parent, room, main_refresh_callback):
+        """
+        Initialize the room inspector.
+
+        :param parent: The parent Tkinter widget.
+        :param room: The specific Room object to manage.
+        :param main_refresh_callback: Callback to update the main HomeHubUI list.
+        """
         self.window = tk.Toplevel(parent)
         self.window.title(f"Managing: {room.name}")
         self.room = room
@@ -68,7 +97,6 @@ class RoomInspectorUI:
         add_frame.pack(fill="x", padx=10, pady=5)
 
         self.type_var = tk.StringVar(value="Light")
-        # ADDED "Alarm" to the Combobox
         ttk.Combobox(add_frame, textvariable=self.type_var,
                      values=["Light", "Thermostat", "Lock", "Motion Sensor", "Alarm"]).pack(side=tk.LEFT)
 
@@ -86,23 +114,30 @@ class RoomInspectorUI:
         self.refresh()
 
     def refresh(self):
+        """Populates the listbox with the current devices in the room."""
         self.listbox.delete(0, tk.END)
         for dev in self.room.devices:
             self.listbox.insert(tk.END, f"{dev.name} [{dev.__class__.__name__}] - Status: {dev.status}")
         self.main_refresh()
 
     def add_dev(self):
+        """Creates a new device based on input fields and adds it to the room."""
         name = self.name_entry.get()
         self.room.add_device(self.type_var.get(), name)
         self.refresh()
 
     def delete_dev(self):
+        """Removes the selected device from the room."""
         idx = self.listbox.curselection()
         if idx:
             self.room.devices.pop(idx[0])
             self.refresh()
 
     def sim_motion(self):
+        """
+        Triggers the detection logic on all Motion Sensors in the room.
+        Warns if no sensors are present.
+        """
         sensors_found = False
         for dev in self.room.devices:
             if isinstance(dev, SecurityMotionSensor):
@@ -116,7 +151,18 @@ class RoomInspectorUI:
 
 
 class HomeHubUI:
+    """
+    The main application window. Displays the list of rooms and provides access
+    to specific subsystems (Remote, Security Panel).
+    """
+
     def __init__(self, root, hub):
+        """
+        Initialize the main dashboard.
+
+        :param root: The root Tkinter window.
+        :param hub: The central HomeHub instance.
+        """
         self.hub = hub
         self.root = root
         self.root.title("Smart Home System")
@@ -141,6 +187,7 @@ class HomeHubUI:
         self.refresh()
 
     def add_sample_room(self):
+        """Generates a room populated with a full suite of test devices."""
         name = f"SampleRoom{self.sample_counter}"
         new_room = self.hub.create_room(name)
         new_room.add_device("Light", "Main Light" + self.sample_counter.__str__())
@@ -152,6 +199,7 @@ class HomeHubUI:
         self.refresh()
 
     def refresh(self):
+        """Updates the room listbox."""
         self.room_listbox.delete(0, tk.END)
         if not self.hub.rooms:
             self.room_listbox.insert(tk.END, "No rooms added yet.")
@@ -160,63 +208,70 @@ class HomeHubUI:
                 self.room_listbox.insert(tk.END, f"{r.name} — ({len(r.devices)} devices)")
 
     def add_room(self):
+        """Prompts user for a room name and adds it to the hub."""
         room_name = simpledialog.askstring("New Room", "Enter room name:", parent=self.root)
         if room_name and room_name.strip():
             self.hub.create_room(room_name.strip())
             self.refresh()
 
     def open_room(self, event):
+        """Opens the RoomInspectorUI for the double-clicked room."""
         idx = self.room_listbox.curselection()
         if idx and self.hub.rooms:
             RoomInspectorUI(self.root, self.hub.rooms[idx[0]], self.refresh)
 
     def open_remote(self):
+        """Opens the generic Remote Control UI."""
         if not self.hub.rooms: return
         RemoteControlUI(self.root, self.hub)
 
     def open_security(self):
+        """Opens the dedicated Security Dashboard."""
         if not self.hub.rooms:
             messagebox.showinfo("Security", "Add rooms and security devices first!")
             return
-        # This calls the constructor with 3 arguments:
-        # 1. self.root (parent)
-        # 2. self.hub (logic)
-        # 3. self.refresh (callback function)
         SecurityDashboardUI(self.root, self.hub, self.refresh)
 
 
 class SecurityDashboardUI:
+    """
+    A specialized Toplevel window for monitoring and controlling security devices.
+    Features global Arm/Disarm controls and a scrollable list of security devices.
+    """
+
     def __init__(self, parent, hub, main_refresh):
+        """
+        Initialize the security dashboard.
+
+        :param parent: The parent Tkinter widget.
+        :param hub: The central HomeHub instance.
+        :param main_refresh: Callback to refresh the main UI.
+        """
         self.window = tk.Toplevel(parent)
         self.window.title("Master Security Oversight")
         self.window.geometry("600x600")
         self.hub = hub
         self.main_refresh = main_refresh
 
-        # --- Master Controls ---
         master_frame = tk.LabelFrame(self.window, text="Master Controls", padx=10, pady=10)
         master_frame.pack(fill="x", padx=10, pady=5)
 
         tk.Button(master_frame, text="ARM ALL", bg="#ffcccc", font=("Arial", 9, "bold"),
-                   command=lambda: self.global_security_action("arm")).pack(side=tk.LEFT, expand=True, fill="x",
-                                                                               padx=5)
+                  command=lambda: self.global_security_action("arm")).pack(side=tk.LEFT, expand=True, fill="x",
+                                                                           padx=5)
         tk.Button(master_frame, text="DISARM ALL", bg="#ccffcc", font=("Arial", 9, "bold"),
                   command=lambda: self.global_security_action("disarm")).pack(side=tk.LEFT, expand=True, fill="x",
-                                                                                  padx=5)
+                                                                              padx=5)
 
-        # --- FIX: SCROLLABLE CANVAS SETUP ---
         self.canvas = tk.Canvas(self.window)
         self.scrollbar = ttk.Scrollbar(self.window, orient="vertical", command=self.canvas.yview)
-        # We attach the frame to the canvas via a 'window'
         self.scroll_frame = tk.Frame(self.canvas)
 
-        # This ensures the canvas scrollable area updates when devices are added/removed
         self.scroll_frame.bind(
             "<Configure>",
             lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all"))
         )
 
-        # Create the connection between canvas and frame
         self.canvas.create_window((0, 0), window=self.scroll_frame, anchor="nw")
         self.canvas.configure(yscrollcommand=self.scrollbar.set)
 
@@ -226,12 +281,14 @@ class SecurityDashboardUI:
         self.refresh()
 
     def refresh(self):
-        # IMPORTANT: Use self.scroll_frame as the parent for your labels and buttons
+        """
+        Rebuilds the security device list inside the scrollable frame.
+        Filters devices to show only SecurityDevice or SecurityAlarm instances.
+        """
         for widget in self.scroll_frame.winfo_children():
             widget.destroy()
 
         for room in self.hub.rooms:
-            # Filters all devices that are SecurityDevices (Locks, Sensors, Alarms)
             sec_devices = [d for d in room.devices if isinstance(d, (SecurityDevice, SecurityAlarm))]
             if not sec_devices: continue
 
@@ -242,7 +299,6 @@ class SecurityDashboardUI:
                 frame = tk.Frame(self.scroll_frame, bd=1, relief="groove", pady=5)
                 frame.pack(fill="x", padx=10, pady=2)
 
-                # State Pattern status color
                 status_str = str(dev.status)
                 color = "green" if status_str == "OFF" else "orange" if status_str == "ARMED" else "red"
 
@@ -252,9 +308,8 @@ class SecurityDashboardUI:
                 tk.Label(frame, text=status_str, width=10, fg=color,
                          font=("Arial", 9, "bold")).pack(side=tk.LEFT)
 
-                    # Interaction buttons
                 tk.Button(frame, text="Arm", command=lambda d=dev: self.update_dev(d, "arm")).pack(side=tk.LEFT,
-                                                                                                       padx=2)
+                                                                                                   padx=2)
                 tk.Button(frame, text="Disarm", command=lambda d=dev: self.update_dev(d, "disarm")).pack(
                     side=tk.LEFT, padx=2)
                 if isinstance(dev, SecurityLock):
@@ -262,6 +317,11 @@ class SecurityDashboardUI:
                               command=lambda d=dev: self.update_dev(d, "unblock")).pack(side=tk.LEFT, padx=2)
 
     def global_security_action(self, action):
+        """
+        Arms or disarms every security device in the house.
+
+        :param action: 'arm' to power on, 'disarm' to power off.
+        """
         for room in self.hub.rooms:
             for dev in room.devices:
                 if isinstance(dev, SecurityDevice):
@@ -273,6 +333,12 @@ class SecurityDashboardUI:
         self.main_refresh()
 
     def update_dev(self, dev, action):
+        """
+        Performs an action on a single security device.
+
+        :param dev: The device object.
+        :param action: 'arm', 'disarm', or 'unblock'.
+        """
         if action == "arm":
             dev.powerOn()
         elif action == "disarm":
